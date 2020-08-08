@@ -1,0 +1,18 @@
+﻿@page "/WriteAttachment/{tableName}"
+@inject NavigationManager URL
+@inject Microsoft.AspNetCore.Http.IHttpContextAccessor httpContext
+
+@code {
+
+    [Parameter]
+    public string tableName { get; set; }
+
+    protected override void OnInitialized()
+    {
+        httpContext.HttpContext.Response.ContentType = "application/zip";
+        httpContext.HttpContext.Response.ContentLength = new System.IO.FileInfo(System.IO.Path.Combine(Startup.Environment.ContentRootPath, System.IO.Path.Combine("TempFolder", tableName + ".zip"))).Length;
+        httpContext.HttpContext.Response.Headers.Add("Content-Disposition", $"attachment; filename={tableName + ".zip"}");
+        byte[] zipBuf = System.IO.File.ReadAllBytes(System.IO.Path.Combine(Startup.Environment.ContentRootPath, System.IO.Path.Combine("TempFolder", tableName + ".zip")));
+        httpContext.HttpContext.Response.BodyWriter.WriteAsync(zipBuf);
+    }
+}

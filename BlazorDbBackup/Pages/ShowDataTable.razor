@@ -1,0 +1,148 @@
+﻿@page "/ShowDataTable/{TableName}"
+@using Microsoft.EntityFrameworkCore.Metadata
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Logging;
+@using System.ComponentModel.DataAnnotations
+@using Pomelo.EntityFrameworkCore.MySql
+@inject Database.ApplicationDbContext MySQL
+@inject ILogger<ShowDataTable> logger;
+@inject NavigationManager URL
+
+<h3>@tableName (@TableName) @RowCount rows</h3>
+<br />
+<div class="row" style="margin-left:10px">
+    <EditForm Model="@readLimit" Context="SubmitContext">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <p>
+            <label>From</label>
+            <InputNumber id="From" @bind-Value="readLimit.From" />
+        </p><p>
+            <label>Limit</label>
+            <InputNumber id="Limit" @bind-Value="readLimit.Limit" />
+        </p>
+        <button id="Read" type="submit" class="btn btn-primary" @onclick="@(() => ReRead(SubmitContext))">Read data</button>
+        <button id="Backup" type="submit" class="btn btn-primary" @onclick="@(() => Backup(SubmitContext))">Backup data</button>
+    </EditForm>
+</div>
+<br />
+
+<table border="1">
+    <tr style="vertical-align: top;">
+        @for (int col = 0; col < columnName.Count; col++)
+        {
+            int Col = col;
+            <td>
+                <b>@columnName[Col]</b>
+                <br />
+                <span style="color:gray">@columnType[Col]</span>
+            </td>
+        }
+    </tr>
+    @if (Data.Count > 0)
+    {
+        @for (int row = 0; row < Data.Count; row++)
+        {
+            int Row = row;
+            <tr>
+                @for (int col = 0; col < columnName.Count; col++)
+                {
+                    int Col = col;
+                    <td>
+                        @Data[Row][Col]
+                    </td>
+                }
+            </tr>
+        }
+    }
+</table>
+
+@lErr1;
+
+
+@code {
+
+
+
+    [Parameter]
+    public string TableName { get; set; }
+
+    protected IEntityType Table { get; set; }
+    public string tableName { get; set; }
+    protected string tableSchema { get; set; }
+    protected List<string> columnName { get; set; } = new List<string>();
+    protected List<string> columnType { get; set; } = new List<string>();
+    protected long RowCount { get; set; }
+    protected List<Object[]> Data { get; set; }
+    ReadLimit readLimit { get; set; } = new ReadLimit();
+    string lErr1;
+
+    protected override void OnInitialized()
+    {
+        Table = MySQL.Model.FindEntityType(TableName); //or Table = MySQL.Model.GetEntityTypes().Where(x => x.Name == TableName).FirstOrDefault();
+        tableName = Table.GetTableName();
+        tableSchema = Table.GetSchema();
+        foreach (var property in Table.GetProperties())
+        {
+            columnName.Add(property.GetColumnName());
+            columnType.Add(property.GetColumnType());
+            logger.LogInformation($"{tableName }, {tableSchema }, {columnName}, {columnType}");
+        };
+        var CMD = MySQL.Database.GetDbConnection().CreateCommand();
+        CMD.CommandText = $"SELECT COUNT(*) FROM {tableName}";
+        MySQL.Database.OpenConnection();
+        RowCount = (long)CMD.ExecuteScalar();
+        MySQL.Database.CloseConnection();
+
+        readLimit.From = 0;
+        readLimit.Limit = 100;
+        ReRead(null);
+    }
+
+    void Backup(EditContext SubmitContext)
+    {
+        logger.LogInformation($"Data drom {tableName} will be saved temporary to {System.IO.Path.Combine(Startup.Environment.ContentRootPath, "TempFolder")}");
+        MySQL.Database.OpenConnection();
+        Db2CsvBackuper.DBDumper.DumpTableToFile((MySql.Data.MySqlClient.MySqlConnection)MySQL.Database.GetDbConnection(), tableName, System.IO.Path.Combine(Startup.Environment.ContentRootPath, System.IO.Path.Combine("TempFolder", tableName + ".txt")));
+        MySQL.Database.CloseConnection();
+        Db2CsvBackuper.Zip.AddFileToZip(System.IO.Path.Combine(Startup.Environment.ContentRootPath, System.IO.Path.Combine("TempFolder", tableName + ".zip")), System.IO.Path.Combine(Startup.Environment.ContentRootPath, System.IO.Path.Combine("TempFolder", tableName + ".txt")));
+        URL.NavigateTo("/WriteAttachment/" + tableName, true);
+    }
+
+    void ReRead(EditContext SubmitContext)
+    {
+        try
+        {
+            System.Text.StringBuilder ColumnList = new System.Text.StringBuilder();
+            columnName.ForEach(x => ColumnList.Append($"`{x}`,"));
+            Data = new List<Object[]>();
+            var CMD2 = MySQL.Database.GetDbConnection().CreateCommand();
+            CMD2.CommandText = $"SELECT {ColumnList.ToString(0, ColumnList.Length - 1)} FROM {tableName} LIMIT {readLimit.From},{readLimit.Limit}";
+            logger.LogInformation(CMD2.CommandText);
+            MySQL.Database.OpenConnection();
+            var RDR = CMD2.ExecuteReader();
+            while (RDR.Read())
+            {
+                Object[] OneRow = new Object[columnName.Count];
+                int columnCount = RDR.GetValues(OneRow);
+                Data.Add(OneRow);
+            }
+            MySQL.Database.CloseConnection();
+            StateHasChanged();
+        }
+        catch (Exception e)
+        {
+            lErr1 = e.Message;
+            StateHasChanged();
+        }
+
+    }
+
+
+    public class ReadLimit
+    {
+        [Required] public int From;
+        [Required] public int Limit;
+    }
+
+}

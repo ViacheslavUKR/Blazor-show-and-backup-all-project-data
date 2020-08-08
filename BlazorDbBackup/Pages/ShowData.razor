@@ -1,0 +1,33 @@
+﻿@page "/ShowData"
+@using Microsoft.EntityFrameworkCore.Metadata
+@using Microsoft.EntityFrameworkCore
+@inject Database.ApplicationDbContext MySQL
+
+
+<h3>ProjectData</h3>
+
+<ul>
+    @for (int i = 0; i < TableList.Count; i++)
+    {
+        int j = i;
+        <li>
+            <a href="@("/ShowDataTable/" + @TableList[i].Name)" style="cursor:pointer;">@TableList[i].GetTableName()</a>
+        </li>
+    }
+
+
+
+</ul>
+
+@code {
+
+    protected List<IEntityType> TableList;
+
+    protected override void OnInitialized()
+    {
+        TableList = MySQL.Model.GetEntityTypes().OrderBy(x => x.GetTableName()).ToList();
+    }
+}
+
+
+
